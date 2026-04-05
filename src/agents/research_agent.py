@@ -9,8 +9,6 @@ from src.services.tavily_service import TavilyService
 from src.services.search_gateway import SearchGateway
 from src.cache import CacheManager
 from src.utils.rate_limiter import RateLimiter
-from src.cache import CacheManager
-from src.utils.rate_limiter import RateLimiter
 from src.utils import ResearchSynthesizer, ReportFormatter, TextProcessor
 
 

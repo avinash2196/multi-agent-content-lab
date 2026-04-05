@@ -21,7 +21,7 @@ async def test_research_agent_generates_report():
         SearchResult(title="AI 101", link="https://example.com/ai", snippet="Basics of AI"),
         SearchResult(title="ML Overview", link="https://example.com/ml", snippet="Intro to ML"),
     ]
-    agent = ResearchAgent(serp_service=FakeSerpService(fake_results), config={"num_results": 2})
+    agent = ResearchAgent(search_gateway=FakeSerpService(fake_results), config={"num_results": 2})
 
     input_data = AgentInput(query="Artificial Intelligence basics", session_id="s1")
     response = await agent.run(input_data)
@@ -36,7 +36,7 @@ async def test_research_agent_generates_report():
 
 @pytest.mark.asyncio
 async def test_research_agent_handles_no_results():
-    agent = ResearchAgent(serp_service=FakeSerpService([]))
+    agent = ResearchAgent(search_gateway=FakeSerpService([]))
     input_data = AgentInput(query="Some rare topic", session_id="s2")
 
     response = await agent.run(input_data)

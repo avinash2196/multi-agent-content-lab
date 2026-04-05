@@ -12,9 +12,22 @@ from src.graph.agent_graph import AgentGraph
 from src.utils.observability import Observability
 from src.utils.rate_limiter import RateLimiter
 
-app = FastAPI(title="ContentAlchemy API", version="0.1.0")
+app = FastAPI(
+    title="multi-agent-content-lab API",
+    version="0.1.0",
+    description=(
+        "FastAPI backend for the multi-agent content generation pipeline. "
+        "Exposes a single /run endpoint that triggers the full LangGraph workflow. "
+        "See README for setup instructions."
+    ),
+)
 
-# Shared dependencies
+# ---------------------------------------------------------------------------
+# Shared singletons
+# ---------------------------------------------------------------------------
+# These are created once at startup and shared across requests.
+# In a production service you would typically use FastAPI's dependency
+# injection system (lifespan events) rather than module-level globals.
 observability = Observability()
 rate_limiter = RateLimiter(max_requests=settings.backend_rpm, window_seconds=60)
 
@@ -22,7 +35,17 @@ graph = AgentGraph()
 compiled_graph = graph.compile()
 
 
+# ---------------------------------------------------------------------------
+# Request / Response models
+# ---------------------------------------------------------------------------
+
 class RunRequest(BaseModel):
+    """Payload for the POST /run endpoint.
+
+    All boolean flags default to True so a minimal request only needs
+    a ``query`` string.
+    """
+
     query: str
     session_id: Optional[str] = None
     context: Dict[str, Any] = Field(default_factory=dict)
@@ -34,6 +57,12 @@ class RunRequest(BaseModel):
 
 
 class RunResponse(BaseModel):
+    """Structured response returned after the pipeline completes.
+
+    Fields are Optional because some outputs are conditionally generated
+    (e.g., ``blog_content`` is None when ``generate_blog=False``).
+    """
+
     session_id: str
     final_output: Dict[str, Any]
     research_results: Optional[Dict[str, Any]]
@@ -43,7 +72,20 @@ class RunResponse(BaseModel):
     errors: list
 
 
+# ---------------------------------------------------------------------------
+# Dependency functions
+# ---------------------------------------------------------------------------
+
 def require_api_key(x_api_key: Optional[str] = Header(None)):
+    """FastAPI dependency that enforces the optional API key guard.
+
+    If ``BACKEND_API_KEY`` is not set in the environment, auth is disabled and
+    all requests are allowed.  This is intentional for local development.
+
+    Design note:
+        For a production service you would want a proper auth layer
+        (OAuth2, JWT, etc.) rather than a single shared secret.
+    """
     if settings.backend_api_key and settings.backend_api_key.strip():
         if not x_api_key or x_api_key != settings.backend_api_key:
             raise HTTPException(status_code=401, detail="invalid_api_key")
@@ -51,6 +93,11 @@ def require_api_key(x_api_key: Optional[str] = Header(None)):
 
 
 def build_initial_state(query: str, session_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    """Construct the initial LangGraph AgentState dict for a new workflow run.
+
+    LangGraph requires all state keys to be present at graph entry so that
+    nodes can safely read them without KeyError.
+    """
     return {
         "messages": [],
         "current_query": query,
@@ -66,13 +113,32 @@ def build_initial_state(query: str, session_id: str, context: Dict[str, Any]) ->
     }
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
 async def health():
+    """Liveness probe — returns 200 OK when the server is running."""
     return {"status": "ok"}
 
 
 @app.post("/run", response_model=RunResponse)
 async def run_workflow(payload: RunRequest, _: bool = Depends(require_api_key)):
+    """Trigger the full multi-agent content generation pipeline.
+
+    Request lifecycle:
+        1. Rate limiter check — rejects with 429 if over the configured RPM.
+        2. Build initial LangGraph state from the request payload.
+        3. Invoke the compiled graph asynchronously (``ainvoke``).
+        4. Extract the relevant fields from the final state and return.
+
+    Scalability note:
+        This endpoint is stateless — each call gets an independent session ID
+        and graph invocation.  Horizontal scaling is straightforward as long as
+        the rate limiter is moved to an external store (Redis) so limits are
+        shared across instances.
+    """
     if not rate_limiter.allow():
         raise HTTPException(status_code=429, detail="rate_limited")
 

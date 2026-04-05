@@ -31,7 +31,10 @@ class DalleService:
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
         self.logger = logging.getLogger("dalle_service")
         self.observability = observability or Observability()
-        self.client = client or AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        try:
+            self.client = client or AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        except Exception:
+            self.client = None
 
     async def generate(self, prompt: str, size: str = "1024x1024", n: int = 1) -> Dict[str, Any]:
         if not self.api_key:

@@ -25,7 +25,10 @@ class BlogWriterAgent(BaseAgent):
         self.quality = ContentQualityChecker()
         self.tp = TextProcessor()
         self.use_llm_polish = (config or {}).get("use_llm_polish", False)
-        self.llm_gateway = llm_gateway or LLMGateway.from_settings()
+        try:
+            self.llm_gateway = llm_gateway or LLMGateway.from_settings()
+        except Exception:
+            self.llm_gateway = None
         self.voice_profile = BrandVoiceProfile(**(config.get("brand_voice", {}) if config else {}))
         self.voice_checker = BrandVoiceChecker(self.voice_profile)
         self.voice_rewriter = BrandVoiceRewriter(self.voice_profile, llm_gateway=self.llm_gateway)
