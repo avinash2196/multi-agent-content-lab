@@ -27,7 +27,10 @@ class ImageAgent(BaseAgent):
         self.dalle = dalle_service or DalleService(observability=self.observability)
         self.image_manager = image_manager or ImageManager()
         self.use_alt_text = (config or {}).get("generate_alt_text", False)
-        self.llm_gateway = llm_gateway or (LLMGateway.from_settings(observability=self.observability) if self.use_alt_text else None)
+        try:
+            self.llm_gateway = llm_gateway or (LLMGateway.from_settings(observability=self.observability) if self.use_alt_text else None)
+        except Exception:
+            self.llm_gateway = None
         self.logger.info("Image Agent initialized")
 
     async def execute(self, input_data: AgentInput) -> AgentOutput:
@@ -44,12 +47,22 @@ class ImageAgent(BaseAgent):
         research = context.get("research", {})
         enhanced_prompt = await self._build_image_prompt(description, research, style)
 
-        with self.observability.span(
-            "image_agent.generate",
-            {"aspect_ratio": aspect, "count": n, "style": style or "default"},
-        ):
-            images = await self.dalle.generate(prompt=enhanced_prompt, size=aspect, n=n)
-            self.observability.record_event("image_agent.success", {"count": len(images.get("urls", []))})
+        try:
+            with self.observability.span(
+                "image_agent.generate",
+                {"aspect_ratio": aspect, "count": n, "style": style or "default"},
+            ):
+                images = await self.dalle.generate(prompt=enhanced_prompt, size=aspect, n=n)
+                self.observability.record_event("image_agent.success", {"count": len(images.get("urls", []))})
+        except RuntimeError as exc:
+            if "openai_api_key_missing" in str(exc) or "circuit_open" in str(exc):
+                # Return prompt-only result when DALL-E is not configured
+                return AgentOutput(
+                    content="",
+                    success=True,
+                    metadata={"prompt": enhanced_prompt, "urls": [], "aspect_ratio": aspect, "count": n},
+                )
+            raise
 
         # Store images with metadata in manager
         key = input_data.session_id or context.get("topic") or input_data.query

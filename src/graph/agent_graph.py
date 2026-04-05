@@ -8,7 +8,34 @@ from config import settings
 
 
 class AgentState(TypedDict):
-    """State object passed between agents in the graph."""
+    """Shared mutable state that flows between every node in the LangGraph.
+
+    LangGraph passes this dict through each node in sequence.  Each node
+    reads what it needs and writes its outputs back to the same dict, so
+    downstream nodes automatically receive the results of upstream work.
+
+    Design note:
+        Using a TypedDict (rather than a plain dict) gives us type hints and
+        makes the state contract explicit.  In LangGraph, state keys that are
+        set to ``None`` by a node are treated as "not yet produced" by
+        downstream nodes.
+
+    Keys:
+        messages: Conversation history [(role, text), ...] for the session.
+        current_query: The original user query, unchanged throughout the run.
+        session_id: Stable session identifier passed from the API layer.
+        context: Flags and settings forwarded from the API request (e.g.,
+            generate_images, generate_blog).
+        routing_decision: Set by QueryHandlerAgent; tells the graph which
+            content types to produce.
+        research_results: Populated by ResearchAgent; consumed by all writers.
+        blog_content: Populated by BlogWriterAgent.
+        linkedin_content: Populated by LinkedInAgent.
+        image_urls: Populated by ImageAgent.
+        final_output: Assembled by StrategistAgent.
+        errors: Accumulated non-fatal errors from any node.
+    """
+
     messages: List[Dict[str, str]]
     current_query: str
     session_id: str
@@ -24,7 +51,37 @@ class AgentState(TypedDict):
 
 @dataclass
 class AgentGraph:
-    """LangGraph-based multi-agent orchestration system."""
+    """LangGraph-based orchestration layer that wires agents into a directed workflow.
+
+    Responsibilities:
+        - Instantiate all agents.
+        - Define the graph topology (nodes + edges + conditional routing).
+        - Compile the graph into an executable object.
+        - Expose helper methods for testing individual edges.
+
+    How it fits into the system:
+        ``server.py`` creates one ``AgentGraph`` at startup, compiles it, and
+        stores the result as a module-level singleton.  Each API request calls
+        ``compiled_graph.ainvoke(initial_state)`` to run the pipeline.
+
+    Graph topology (simplified):
+        query_handler
+            -> research (for blog/linkedin/multi)
+            -> image_generator (for image requests or after research)
+        research -> image_generator -> blog_writer -> linkedin_writer -> strategist
+
+    Design trade-off — sequential vs parallel execution:
+        Agents currently run sequentially.  In a production system, image
+        generation and blog writing could run in parallel using LangGraph's
+        parallel branch support, halving latency.  Sequential execution is used
+        here because it is easier to reason about state mutations.
+
+    Learning note:
+        LangGraph is built on top of LangChain's LCEL (LangChain Expression
+        Language) and borrows concepts from state machines / workflow engines.
+        The ``StateGraph`` class handles the plumbing of passing state between
+        nodes so agent code stays focused on its domain task.
+    """
     
     def __init__(self):
         self.logger = logging.getLogger("agent_graph")

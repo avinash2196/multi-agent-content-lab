@@ -25,7 +25,10 @@ class LinkedInAgent(BaseAgent):
         self.default_cta = "What do you think?"
         self.max_chars = (config or {}).get("max_chars", 1200)
         self.use_llm_polish = (config or {}).get("use_llm_polish", False)
-        self.llm_gateway = llm_gateway or LLMGateway.from_settings()
+        try:
+            self.llm_gateway = llm_gateway or LLMGateway.from_settings()
+        except Exception:
+            self.llm_gateway = None
         self.voice_profile = BrandVoiceProfile(**(config.get("brand_voice", {}) if config else {}))
         self.voice_checker = BrandVoiceChecker(self.voice_profile)
         self.voice_rewriter = BrandVoiceRewriter(self.voice_profile, llm_gateway=self.llm_gateway)

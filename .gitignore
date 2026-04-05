@@ -12,25 +12,42 @@ __pycache__/
 .venv/
 venv/
 env/
+ENV/
 
-# Environment files
+# Environment files — never commit real secrets
 .env
 .env.local
+.env.*.local
 
 # Build and packaging
 build/
 dist/
 *.egg-info/
+*.egg
+.eggs/
 
 # IDE
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
 
-# Testing
+# Testing and coverage
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+coverage.xml
+*.hypothesis/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
